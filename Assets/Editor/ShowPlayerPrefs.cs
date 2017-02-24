@@ -17,6 +17,9 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 
 	private List<string> prefTypesList = new List<string> { PrefTypes.INT.ToString().ToLower(), PrefTypes.FLOAT.ToString().ToLower(), PrefTypes.STRING.ToString().ToLower() };
 
+	private static Dictionary<string, object> localPrefs = new Dictionary<string, object>();
+
+
 	private static Dictionary<string, object> currentPrefs = new Dictionary<string, object>();
 	private static bool debug = false;
 
@@ -27,22 +30,37 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 	private double lastTimeLoadPrefs = 0f;
 	private double updatePrefsRate = 0.1f;
 
+	private string errorText_ = string.Empty;
+
+	private string errorText
+	{
+		get { return errorText_; } 
+		set { showErroBox = true; errorText_ = value; }
+	}
+
+	private bool showErroBox = false;
+
 	private void OnEnable()
 	{
 		ReloadPrefs();
+		localPrefs = currentPrefs;
 	}
 
 	private void OnGUI()
 	{
 		DrawSetPlayerPref();
-		DrawExistingPrefs();
+		if (localPrefs != null)
+		{
+			DrawExistingPrefs();
+
+		}
 	}
 
 	#region DrawGui methods
 	private void DrawExistingPrefs()
 	{
 		Event evt = Event.current;
-		KeyValuePair<string, object>[] array = currentPrefs.ToArray();
+		KeyValuePair<string, object>[] array = localPrefs.ToArray();
 		Array.Sort(array, (x, y) => String.Compare(x.Key, y.Key));
 		for (int i = 0; i < array.Length; i++)
 		{
@@ -63,7 +81,7 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 				SetPrefKey = item.Key;
 				SetPrefType = ConvertTypeToEnum(item.Value.GetType());
 				SetPrefValue = item.Value.ToString();
-				Debug.Log(" change values");
+				DebugLog(" change values");
 				Repaint();
 			}
 
@@ -82,9 +100,8 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 			{
 				DebugLog("Delete pref with key: " + item.Key);
 				PlayerPrefs.DeleteKey(item.Key);
-				currentPrefs.Remove(item.Key);
+				localPrefs.Remove(item.Key);
 				PlayerPrefs.Save();
-				ReloadPrefs();
 				return;
 			}
 			GUILayout.EndHorizontal();
@@ -94,9 +111,12 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 
 	private void DrawSetPlayerPref()
 	{
+		string tempStr = string.Empty;
+		PrefTypes tempType = PrefTypes.UNDEFINED;
 		GUILayout.Space(5f);
 		GUI.backgroundColor = new Color(0.85f, 0.85f, 0.85f);
-		GUI.Box(new Rect(1, 1, position.width - 2, EditorGUIUtility.singleLineHeight * 4 + 2f*4), "");
+		float boxHeight = EditorGUIUtility.singleLineHeight * 4 + 2f * 4 + (showErroBox ? 40f : 0f);
+		GUI.Box(new Rect(1, 1, position.width - 2, boxHeight), "");
 
 		GUI.skin.label.fontStyle = FontStyle.Bold;
 		GUILayout.Label("Set PlayerPref");
@@ -104,16 +124,32 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 
 		GUILayout.BeginHorizontal();
 		GUILayout.Label("PlayerPref key:", GUILayout.Width(85f));
-		SetPrefKey = GUILayout.TextField(SetPrefKey, GUILayout.Width(position.width - 85f - 15f));
+		tempStr = GUILayout.TextField(SetPrefKey, GUILayout.Width(position.width - 85f - 15f));
+		if (tempStr != SetPrefKey)
+		{
+			OnSetPrefValuesChanged();
+			Debug.Log("Key wa changed");
+		}
+		SetPrefKey = tempStr;
 		GUILayout.EndHorizontal();
 
 		GUILayout.Space(5f);
 
 		GUILayout.BeginHorizontal();
 		GUILayout.Label("Value:", GUILayout.Width(35f));
-		SetPrefValue = GUILayout.TextField(SetPrefValue, GUILayout.Width(position.width - 50f - PrefTypeWidth - 35f - 20f));
+		tempStr = GUILayout.TextField(SetPrefValue, GUILayout.Width(position.width - 50f - PrefTypeWidth - 35f - 20f));
+		if (tempStr != SetPrefValue)
+		{
+			OnSetPrefValuesChanged();
+		}
+		SetPrefValue = tempStr;
 
-		SetPrefType = (PrefTypes)(EditorGUILayout.Popup((int)SetPrefType - 1, prefTypesList.ToArray(), GUILayout.Width(PrefTypeWidth)) + 1);
+		tempType = (PrefTypes)(EditorGUILayout.Popup((int)SetPrefType - 1, prefTypesList.ToArray(), GUILayout.Width(PrefTypeWidth)) + 1);
+		if (tempType != SetPrefType)
+		{
+			OnSetPrefValuesChanged();
+		}
+		SetPrefType = tempType;
 
 		GUI.color = new Color(0.6f, 1f, 0.6f);
 		if (GUILayout.Button("Set", GUILayout.Width(50f)))
@@ -122,11 +158,22 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 		}
 		GUILayout.EndHorizontal();
 
-		GUILayout.Space(DefaultRegionsSpace);
 		GUI.backgroundColor = Color.white;
 		GUI.color = Color.white;
+
+		if (showErroBox)
+		{
+			EditorGUILayout.HelpBox(errorText, MessageType.Error, true);
+		}
+
+		GUILayout.Space(DefaultRegionsSpace);
 	}
 	#endregion DrawGui methods
+
+	private void OnSetPrefValuesChanged()
+	{
+		showErroBox = false;
+	}
 
 	private void Update()
 	{
@@ -149,6 +196,7 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 		{
 			DebugLog("PlayerPrefs.SetString " + key + " " + value);
 			PlayerPrefs.SetString(key, value);
+			UpdateValue(key, value);
 		}
 		else if (type == PrefTypes.INT)
 		{
@@ -157,10 +205,12 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 			{
 				DebugLog("PlayerPrefs.SetInt " + key + " " + val);
 				PlayerPrefs.SetInt(key, val);
+				UpdateValue(key, val);
 			}
 			else
 			{
-				DebugErroLog("Cannot cast " + value + " to int");
+				errorText = "Cannot cast " + value + " to int";
+				DebugErroLog(errorText);
 			}
 		}
 		else if (type == PrefTypes.FLOAT)
@@ -170,10 +220,12 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 			{
 				DebugLog("PlayerPrefs.SetFloat " + key + " " + val);
 				PlayerPrefs.SetFloat(key, val);
+				UpdateValue(key, val);
 			}
 			else
 			{
-				DebugErroLog("Cannot cast " + value + " to float");
+				errorText = "Cannot cast " + value + " to float";
+				DebugErroLog(errorText);
 			}
 		}
 		else if (type == PrefTypes.UNDEFINED)
@@ -181,7 +233,18 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 			DebugErroLog("Type is undefined. Change it");
 		}
 		PlayerPrefs.Save();
-		ReloadPrefs();
+	}
+
+	private void UpdateValue(string key, object value)
+	{
+		if (!localPrefs.ContainsKey(key))
+		{
+			localPrefs.Add(key, value);
+		}
+		else 
+		{
+			localPrefs[key] = value;
+		}
 	}
 
 	private PrefTypes ConvertTypeToEnum(Type type)
@@ -205,10 +268,13 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 	private void ReloadPrefs()
 	{
 		currentPrefs = GetMacPrefs();
-		List<string> deleteList = currentPrefs.Keys.Where(key => key.StartsWith("unity.")).ToList();
-		for (int i = 0; i < deleteList.Count; i++)
+		if (currentPrefs != null)
 		{
-			currentPrefs.Remove(deleteList[i]);
+			List<string> deleteList = currentPrefs.Keys.Where(key => key.StartsWith("unity.")).ToList();
+			for (int i = 0; i < deleteList.Count; i++)
+			{
+				currentPrefs.Remove(deleteList[i]);
+			}
 		}
 		Repaint();
 	}
