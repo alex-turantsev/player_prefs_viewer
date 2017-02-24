@@ -12,7 +12,7 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 	#region GUIConstans
 	private const float PrefTypeWidth = 45f;
 	private const float DefaultRegionsSpace = 15f;
-	private const float MinusButtonWidth = 15f;
+	private const float MinusButtonWidth = 17f;
 	#endregion GUIConstans
 
 	private List<string> prefTypesList = new List<string> { PrefTypes.INT.ToString().ToLower(), PrefTypes.FLOAT.ToString().ToLower(), PrefTypes.STRING.ToString().ToLower() };
@@ -24,8 +24,8 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 	private PrefTypes SetPrefType = PrefTypes.INT;
 	private string SetPrefValue = "value";
 
-	private float lastTimeLoadPrefs = 0f;
-	private float updatePrefsRate = 1.5f;
+	private double lastTimeLoadPrefs = 0f;
+	private double updatePrefsRate = 0.1f;
 
 	private void OnEnable()
 	{
@@ -34,11 +34,6 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 
 	private void OnGUI()
 	{
-		if (lastTimeLoadPrefs < (Time.unscaledTime - updatePrefsRate))
-		{
-			ReloadPrefs();
-			lastTimeLoadPrefs = Time.unscaledTime;
-		}
 		DrawSetPlayerPref();
 		DrawExistingPrefs();
 	}
@@ -46,17 +41,44 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 	#region DrawGui methods
 	private void DrawExistingPrefs()
 	{
+		Event evt = Event.current;
 		KeyValuePair<string, object>[] array = currentPrefs.ToArray();
+		Array.Sort(array, (x, y) => String.Compare(x.Key, y.Key));
 		for (int i = 0; i < array.Length; i++)
 		{
+			float width = position.width;
+			float deltaItem = 6f;
 			KeyValuePair<string, object> item = array[i];
 
+			Rect lastRect = GUILayoutUtility.GetLastRect();
+			lastRect.x = 2f;
+			lastRect.y += EditorGUIUtility.singleLineHeight + 3f;
+			lastRect.width = position.width - MinusButtonWidth - 6f;
+
+			if ((evt.type == EventType.MouseDown
+				 || evt.type == EventType.mouseDown
+				 || evt.type == EventType.mouseUp
+				 || evt.type == EventType.MouseUp) && lastRect.Contains(evt.mousePosition))
+			{
+				SetPrefKey = item.Key;
+				SetPrefType = ConvertTypeToEnum(item.Value.GetType());
+				SetPrefValue = item.Value.ToString();
+				Debug.Log(" change values");
+				Repaint();
+			}
+
 			GUILayout.BeginHorizontal();
-			GUILayout.Label(item.Key, GUILayout.Width(position.width * 0.4f));
-			GUILayout.Label(ConvertTypeToEnum(item.Value.GetType()).ToString().ToLower(), GUILayout.Width(PrefTypeWidth));
-			GUILayout.Label(item.Value.ToString());
-			GUILayout.FlexibleSpace();
-			if (GUILayout.Button("-", GUILayout.Width(MinusButtonWidth)))
+			GUILayout.TextField(item.Key, GUILayout.Width(position.width * 0.3f));
+			width -= position.width * 0.3f;
+			width -= deltaItem;
+
+			GUILayout.Label(ConvertTypeToEnum(item.Value.GetType()).ToString().ToLower(), GUILayout.Width(PrefTypeWidth-10f));
+			width -= (PrefTypeWidth - 10f);
+			width -= deltaItem;
+
+			GUILayout.TextField(item.Value.ToString(), GUILayout.Width(width - MinusButtonWidth - deltaItem));
+
+			if (GUILayout.Button("X", GUILayout.Width(MinusButtonWidth)))
 			{
 				DebugLog("Delete pref with key: " + item.Key);
 				PlayerPrefs.DeleteKey(item.Key);
@@ -67,7 +89,6 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 			}
 			GUILayout.EndHorizontal();
 		}
-
 		GUILayout.Space(DefaultRegionsSpace);
 	}
 
@@ -75,27 +96,27 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 	{
 		GUILayout.Space(5f);
 		GUI.backgroundColor = new Color(0.85f, 0.85f, 0.85f);
-		GUI.Box(new Rect(1, 1, position.width - 2, EditorGUIUtility.singleLineHeight * 4 + 10f), "");
+		GUI.Box(new Rect(1, 1, position.width - 2, EditorGUIUtility.singleLineHeight * 4 + 2f*4), "");
 
 		GUI.skin.label.fontStyle = FontStyle.Bold;
 		GUILayout.Label("Set PlayerPref");
 		GUI.skin.label.fontStyle = FontStyle.Normal;
 
 		GUILayout.BeginHorizontal();
-		GUILayout.Label("PlayerPref key:");
-		SetPrefKey = GUILayout.TextField(SetPrefKey);
+		GUILayout.Label("PlayerPref key:", GUILayout.Width(85f));
+		SetPrefKey = GUILayout.TextField(SetPrefKey, GUILayout.Width(position.width - 85f - 15f));
 		GUILayout.EndHorizontal();
 
 		GUILayout.Space(5f);
 
 		GUILayout.BeginHorizontal();
-		GUILayout.Label("Value:");
-		SetPrefValue = GUILayout.TextField(SetPrefValue);
+		GUILayout.Label("Value:", GUILayout.Width(35f));
+		SetPrefValue = GUILayout.TextField(SetPrefValue, GUILayout.Width(position.width - 50f - PrefTypeWidth - 35f - 20f));
 
 		SetPrefType = (PrefTypes)(EditorGUILayout.Popup((int)SetPrefType - 1, prefTypesList.ToArray(), GUILayout.Width(PrefTypeWidth)) + 1);
 
 		GUI.color = new Color(0.6f, 1f, 0.6f);
-		if (GUILayout.Button("Set", GUILayout.Width(50)))
+		if (GUILayout.Button("Set", GUILayout.Width(50f)))
 		{
 			SetPlayerPref(SetPrefType, SetPrefKey, SetPrefValue);
 		}
@@ -106,6 +127,15 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 		GUI.color = Color.white;
 	}
 	#endregion DrawGui methods
+
+	private void Update()
+	{
+		if (lastTimeLoadPrefs < (EditorApplication.timeSinceStartup - updatePrefsRate))
+		{
+			ReloadPrefs();
+			lastTimeLoadPrefs = EditorApplication.timeSinceStartup;
+		}
+	}
 
 	private void SetPlayerPref(PrefTypes type, string key, string value)
 	{
@@ -180,6 +210,7 @@ public class ShowPlayerPrefs : EditorWindow, IHasCustomMenu
 		{
 			currentPrefs.Remove(deleteList[i]);
 		}
+		Repaint();
 	}
 
 	private static Dictionary<string, object> GetMacPrefs()
